@@ -62,14 +62,23 @@ class cluster_state():
         self.k = k
         self.state = multipartite_state(number_of_modes = spatial_depth*self.macronode_size*self.N)
 
-    def apply_symplectic(self, F):
+    def apply_symplectic(self, F:np.ndarray, indices:np.ndarray, slices:np.ndarray):
+        """Function that apply a symplectic transformation onto specific modes of the multipartite state
+        
+        Args:
+            - F: symplectic matrix
+            - indices: indices of the mu vector onto wich apply the symplectic 
+            - slices: slices of the covariance matrix onto which apply the symplectic
+        
+        Update:
+            Update the covariance matrix and µ vector of the multipartite state """
         mu = self.state.mu
         cov = self.state.cov
 
-        mu = F @ mu
-        cov = F @ cov @ F.H
+        mu[indices] = mu[indices] @ mu
+        cov[slices] = F[slices] @ cov @ F[slices].conj().T
     
-    def BS(self, N, modesA, modesB):
+    def BS(self, N:int, modesA:np.ndarray, modesB:np.ndarray):
         """ Create symplectic that apply a beam splitter onto specific modes
         
         Args:
@@ -88,7 +97,7 @@ class cluster_state():
         F[A, B] = -1/np.sqrt(2)
         return F
 
-    def P(self, N, modes, theta:float):
+    def P(self, N:int, modes:np.ndarray, theta:float):
         """ Create symplectic that apply a phase shift operation onto specific modes
         
         Args:
@@ -105,7 +114,7 @@ class cluster_state():
         F[modes+N,modes+N] = np.cos(theta)
         return F
 
-    def S(self, N, modes, r):
+    def S(self, N:int, modes:np.ndarray, r:float):
         """ Create symplectic that apply a squeezing operation onto specific modes
         
         Args:
@@ -120,7 +129,14 @@ class cluster_state():
         F[modes+N,modes+N] = np.exp(2*r)
         return F
 
-    def squeeze_initial_state(self, r):
+    def squeeze_initial_state(self, r:float):
+        """Introduce squeezing on the initial modes. The first i modes are let vaccum.
+         
+        Args:
+            - r: squeezing parameter, same for all modes
+
+        Update:
+            Update the covariance matrix and µ vector of the multipartite state """
         n, m, k , N, sd, depth = self.n, self.m, self.k, self.N, self.macronode_size, self.spatial_depth
         mu , cov = self.state.mu, self.state.cov
         indice_sqz = np.arange(N*sd,N*sd*depth)
@@ -128,13 +144,17 @@ class cluster_state():
                     modes = indice_sqz - N*sd,
                     r = r)
         indice_XP = np.concatenate([indice_sqz,indice_sqz+N*sd*depth])
-        mu[indice_XP] = mu[indice_XP] @ S
-
         slices = np.ix_(indice_XP,indice_XP)
-        cov[slices] = S @ cov[slices] @ S.conj().T
-        return
+        self.apply_symplectic(S, indice_XP, slices)
     
     def rotate_half_state(self):
+        """Introduce pi/2 phase shift on half of the initial modes. The first i modes are let vaccum.
+         
+        Args:
+            - theta: angle of the rotation matrix, same for all modes
+        
+        Update:
+            Update the covariance matrix and µ vector of the multipartite state"""
         n, m, k , N, sd, depth = self.n, self.m, self.k, self.N, self.macronode_size, self.spatial_depth
         mu , cov = self.state.mu, self.state.cov
         theta = np.pi/2
@@ -145,7 +165,5 @@ class cluster_state():
                    theta = theta)
         
         indice_XP = np.concatenate([indice_rot,indice_rot+N*sd*depth])
-        mu[indice_XP] = mu[indice_XP] @ P
-
         slices = np.ix_(indice_XP,indice_XP)
-        cov[slices] = P @ cov[slices] @ P.conj().T
+        self.apply_symplectic(P, indice_XP, slices)
