@@ -34,7 +34,7 @@ class cluster_state():
 
     To facilitate the implementation I reduce the previous interraction graph to image only the interaction of the ith mode with the future modes
 
-    i   interact with {    i+7    ;  i+1 + 8nm ;  i+2 + (8nm-1) ;    past mode    }
+    i   interact with {    i+7    ;  i+1 + 8nm ;  i+2 + 8(nm-1) ;    past mode    }
     i+1 interact with {    i+2    ; past mode  ;      i+3       ;       i+5       }
     i+2 interact with { past mode ;   i+3 + 8  ;   past mode    ;    past mode    }
     i+3 interact with {    i+4    ; past mode  ;   past mode    ;       i+7       }
@@ -61,22 +61,89 @@ class cluster_state():
         self.m = m
         self.k = k
         self.state = multipartite_state(number_of_modes = spatial_depth*self.macronode_size*self.N)
+        self.generate_BS_indice_array()
 
-    def apply_symplectic(self, F:np.ndarray, indices:np.ndarray, slices:np.ndarray):
+    def generate_BS_indice_array(self):
+        n, m, k , N, ms, depth = self.n, self.m, self.k, self.N, self.macronode_size, self.spatial_depth
+        if ms == 8:
+            interaction_matrix = np.array([ [    0+7    ,  0+1 + 8*n*m ,  0+2 + 8*(n*m-1) ,       np.nan      ],
+                                            [    0+2    ,    np.nan    ,      0+3       ,       0+5       ],
+                                            [    np.nan   ,   0+3 + 8  ,      np.nan      ,       np.nan      ],
+                                            [    0+4    ,    np.nan    ,      np.nan      ,       0+7       ],
+                                            [    np.nan   , 0+5 + 8*n*m*k , 0+6 + 8*(n*m*k-n) ,  0 + 8*(n*m*k-n*m)  ],
+                                            [    0+6    ,    np.nan    ,      0+7       ,       np.nan      ],
+                                            [    np.nan   ,  0+7 + 8*n  ,      np.nan      ,   0+2 + 8*(n-1)  ],
+                                            [    np.nan   ,    np.nan    ,      np.nan      ,       np.nan      ]])
+            
+        i_indices = np.arange(8)
+        # Mask to identify non-nan values in the interaction matrix
+        mask = ~np.isnan(interaction_matrix)
+        # Broadcasting the i_indices to match the shape of the interaction_m
+        i_to_i7 = np.broadcast_to(i_indices[:, np.newaxis], interaction_matrix.shape)
+        # Apply the mask to get the valid indices and interaction values
+        valid_i_to_i7 = [i_to_i7[mask[:, col], col] for col in range(interaction_matrix.shape[1])]
+        valid_interactions = [interaction_matrix[mask[:, col], col] for col in range(interaction_matrix.shape[1])]
+
+        self.BS_indices = [self.generate_arrays_from_pairs(valid_i_to_i7[col],valid_interactions[col],ms,N*ms*depth) for col in range(len(valid_i_to_i7))]
+
+    def generate_arrays_from_pairs(self,A, B, step, max_value):
+        # Convert the input lists to NumPy arrays
+        A_array = np.array(A)
+        B_array = np.array(B)
+        
+        # Ensure that A and B have the same length
+        if len(A_array) != len(B_array):
+            raise ValueError("Arrays A and B must have the same length.")
+        
+        resultA = []
+        resultB = []
+
+        # Process each pair independently
+        for a, b in zip(A_array, B_array):
+            # Calculate the number of steps for each pair (a, b) until max_value
+            num_steps_A = (max_value - a) // step + 1
+            num_steps_B = (max_value - b) // step + 1
+            
+            # Determine the size for the current pair
+            min_num_steps = min(num_steps_A, num_steps_B)
+            
+            # Create the array for each pair
+            result_A = a + np.arange(min_num_steps) * step
+            result_B = b + np.arange(min_num_steps) * step
+            
+            # Append the result tuple to the results list
+            resultA.append(np.array(result_A))
+            resultB.append(np.array(result_B))
+        results = np.array([np.concatenate(resultA),np.concatenate(resultB)],dtype=np.int64)
+        
+        return results
+
+
+    def apply_symplectic(self, F:np.ndarray, indices:np.ndarray):
         """Function that apply a symplectic transformation onto specific modes of the multipartite state
         
         Args:
             - F: symplectic matrix
             - indices: indices of the mu vector onto wich apply the symplectic 
-            - slices: slices of the covariance matrix onto which apply the symplectic
         
         Update:
             Update the covariance matrix and µ vector of the multipartite state """
         mu = self.state.mu
         cov = self.state.cov
+        n, m, k , N, ms, depth = self.n, self.m, self.k, self.N, self.macronode_size, self.spatial_depth
 
-        mu[indices] = mu[indices] @ mu
-        cov[slices] = F[slices] @ cov @ F[slices].conj().T
+        mu[indices] = F @ mu[indices]
+
+        ar = np.arange(2*N*ms*depth)
+        mask = ~np.isin(ar, indices)
+
+
+        slices = np.ix_(indices,indices)
+        slices_B = np.ix_(indices,ar[mask])
+        slices_C = np.ix_(ar[mask],indices)
+        cov[slices] = F @ cov[slices] @ F.conj().T
+        cov[slices_B] = F @ cov[slices_B] 
+        cov[slices_C] = cov[slices_C] @ F.conj().T
     
     def BS(self, N:int, modesA:np.ndarray, modesB:np.ndarray):
         """ Create symplectic that apply a beam splitter onto specific modes
@@ -89,6 +156,7 @@ class cluster_state():
         Return:
             - F: symplectic matrix 2N x 2N"""
         F = np.eye(2*N)
+        print(F.shape)
         A = np.concatenate([modesA,modesB,modesB,modesA+N,modesB+N,modesB+N])
         B = np.concatenate([modesA,modesB, modesA,modesA+N,modesB+N,modesA+N])
         F[A, B] = 1/np.sqrt(2)
@@ -125,8 +193,8 @@ class cluster_state():
         Return:
             - F: symplectic matrix 2N x 2N"""
         F = np.eye(2*N)
-        F[modes,modes] = np.exp(-2*r)
-        F[modes+N,modes+N] = np.exp(2*r)
+        F[modes,modes] = np.exp(-r)
+        F[modes+N,modes+N] = np.exp(r)
         return F
 
     def squeeze_initial_state(self, r:float):
@@ -137,17 +205,15 @@ class cluster_state():
 
         Update:
             Update the covariance matrix and µ vector of the multipartite state """
-        n, m, k , N, sd, depth = self.n, self.m, self.k, self.N, self.macronode_size, self.spatial_depth
-        mu , cov = self.state.mu, self.state.cov
-        indice_sqz = np.arange(N*sd,N*sd*depth)
-        S = self.S(N = N*sd*(depth-1),
-                    modes = indice_sqz - N*sd,
+        n, m, k , N, ms, depth = self.n, self.m, self.k, self.N, self.macronode_size, self.spatial_depth
+        indice_sqz = np.arange(N*ms,N*ms*depth)
+        S = self.S(N = N*ms*(depth-1),
+                    modes = indice_sqz - N*ms,
                     r = r)
-        indice_XP = np.concatenate([indice_sqz,indice_sqz+N*sd*depth])
-        slices = np.ix_(indice_XP,indice_XP)
-        self.apply_symplectic(S, indice_XP, slices)
+        indice_XP = np.concatenate([indice_sqz,indice_sqz+N*ms*depth])
+        self.apply_symplectic(S, indice_XP)
     
-    def rotate_half_state(self):
+    def rotate_half_state(self, theta:float):
         """Introduce pi/2 phase shift on half of the initial modes. The first i modes are let vaccum.
          
         Args:
@@ -155,15 +221,26 @@ class cluster_state():
         
         Update:
             Update the covariance matrix and µ vector of the multipartite state"""
-        n, m, k , N, sd, depth = self.n, self.m, self.k, self.N, self.macronode_size, self.spatial_depth
-        mu , cov = self.state.mu, self.state.cov
-        theta = np.pi/2
+        n, m, k , N, ms, depth = self.n, self.m, self.k, self.N, self.macronode_size, self.spatial_depth
 
-        indice_rot = np.arange(N*sd+1,N*sd*depth,2)
-        P = self.P(N = N*sd*(depth-1)//2,
-                   modes = indice_rot//2 - N*sd,
+        indice_rot = np.arange(N*ms+1,N*ms*depth,2)
+        P = self.P(N = N*ms*(depth-1)//2,
+                   modes = indice_rot//2 - N*ms,
                    theta = theta)
         
-        indice_XP = np.concatenate([indice_rot,indice_rot+N*sd*depth])
-        slices = np.ix_(indice_XP,indice_XP)
-        self.apply_symplectic(P, indice_XP, slices)
+        indice_XP = np.concatenate([indice_rot,indice_rot+N*ms*depth])
+        self.apply_symplectic(P, indice_XP)
+
+    def apply_beamsplitter(self, row:int):
+        n, m, k , N, ms, depth = self.n, self.m, self.k, self.N, self.macronode_size, self.spatial_depth
+        indices = self.BS_indices[row]
+        BS = self.BS(N = 2*len(indices[0]),
+                     modesA = np.arange(len(indices[0])),
+                     modesB = np.arange(len(indices[0]),2*len(indices[0])))
+
+        print(BS.shape)
+        self.apply_symplectic(BS,np.concatenate([np.concatenate(indices),np.concatenate(indices+N*ms*depth)]))
+
+if __name__ == "__main__":
+    cs = cluster_state()
+    cs.apply_beamsplitter(0) 
