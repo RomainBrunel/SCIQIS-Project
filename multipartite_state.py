@@ -1,4 +1,5 @@
 import numpy as np
+import matplotlib.pyplot as plt
 
 class multipartite_state():
     def __init__(self, number_of_modes:int, hbar = 1) -> None:
@@ -10,16 +11,33 @@ class multipartite_state():
         self.cov = np.eye(2*number_of_modes)*hbar/2
     
     def plot_cov_matrix(self):
-        pass
+        plt.figure("Covariance matrix of the system")
+        plt.imshow(self.cov,cmap="viridis")
+        plt.colorbar()
+        plt.xlabel("modes")
+        plt.ylabel("modes")
+        plt.title("Covariance matrix of the system")
 
     def plot_mean_matrix(self):
-        pass
+        plt.figure(r"$\Mu$ vector")
+        plt.imshow(self.mu.reshape(-1,1),aspect=0.1,cmap="viridis")
+        plt.ylabel("modes")
+        plt.colorbar()
 
 class cluster_state():
     """ Define the interferometer that will be the source of the generation of the 4D cluster state and perform the computations.
     The cluster state is defined by X rails that interract with each other. Some of the rails are delayed in time, this crates the 3 other dimentionality of the cluster.
     Modes have to interact with other modes in the past and the future. This is handle by indexing and the creation of "past" modes as vaccum states.
     The first I = spatial_dim * N are used as past modes and stays as vaccum.
+
+    Args:   
+        - spatial_depth: depth of the spatial interferometer in the spatial dimension
+        - n, m, k: int number of modes in the different loops. number_of_modes = n * m * k
+        - structure: str {octo, dual} structure of the interferometer
+    
+    To simulate 2D dual put m=k=1
+    To simulate 3D dual put k=1
+
     The first squeezed modes inserted in the interferometer are i, i+1, i+2, i+3, i+4, i+5, i+6 and i+7.
     Below is detailled how modes i to i+7 are interracting with other modes. 
 
@@ -44,11 +62,12 @@ class cluster_state():
     i+7 interact with { past mode ; past mode  ;   past mode    ;    past mode    }
 
     By encoding only the BS only with the earliest modes the modes i+7 is already defined by the previous 7 others. Which makes sens.
+
+    The interaction for the dual rail is:
+    i   interact with {    i+1    ;  past mode ;    past mode   ;    past mode    ;      past mode     }
+    i+1 interact with { past mode ;   i + 2*1  ;   i + 2*(1+n)  ;  i + 2*(1+n+nm) ; i + 2*(1+n+nm+nmk) }
     
-    Args:   
-        - spatial_depth: depth of the spatial interferometer in the spatial dimension
-        - n, m, k: int number of modes in the different loops. number_of_modes = n * m * k
-        - structure: str {octo, dual} structure of the interferometer """
+     """
     def __init__(self, spatial_depth:int = 2, n:int = 2, m:int=2, k:int=2, structure: str = "octo") -> None:
         if structure == "octo":
             self.macronode_size = 8
@@ -62,6 +81,161 @@ class cluster_state():
         self.k = k
         self.state = multipartite_state(number_of_modes = spatial_depth*self.macronode_size*self.N)
         self.generate_BS_indice_array()
+
+    ###########################################################################
+    ############################    SIMULATION    #############################
+    ###########################################################################
+
+    def run_calculation(self, r):
+        """Run the calculation for the structure of the cluster state
+        
+        Args: 
+            - r: squeezing parameter of the input states"""
+        self.apply_squeezing(r)
+        self.apply_rotation_halfstate(theta=-np.pi/2)
+        for i in range(len(self.BS_indices)):
+            self.apply_beamsplitter(col=i)
+            if i ==0:
+                self.apply_rotation_halfstate(theta=np.pi/2)
+        
+    ###########################################################################
+    #########################    STATE EVOLUTION    ###########################
+    ###########################################################################
+
+    def apply_symplectic(self, F:np.ndarray, indices:np.ndarray):
+        """Function that apply a symplectic transformation onto specific modes of the multipartite state
+        
+        Args:
+            - F: symplectic matrix
+            - indices: indices of the mu vector onto wich apply the symplectic 
+        
+        Update:
+            Update the covariance matrix and µ vector of the multipartite state """
+        mu = self.state.mu
+        cov = self.state.cov
+        n, m, k , N, ms, depth = self.n, self.m, self.k, self.N, self.macronode_size, self.spatial_depth
+
+        mu[indices] = F @ mu[indices]
+
+        ar = np.arange(2*N*ms*depth)
+        mask = ~np.isin(ar, indices)
+
+
+        slices = np.ix_(indices,indices)
+        slices_B = np.ix_(indices,ar[mask])
+        slices_C = np.ix_(ar[mask],indices)
+        cov[slices] = F @ cov[slices] @ F.conj().T
+        cov[slices_B] = F @ cov[slices_B] 
+        cov[slices_C] = cov[slices_C] @ F.conj().T
+    
+    def apply_squeezing(self, r:float):
+        """Introduce squeezing on the initial modes. The first i modes are let vaccum.
+         
+        Args:
+            - r: squeezing parameter, same for all modes
+
+        Update:
+            Update the covariance matrix and µ vector of the multipartite state """
+        n, m, k , N, ms, depth = self.n, self.m, self.k, self.N, self.macronode_size, self.spatial_depth
+        indice_sqz = np.arange(N*ms,N*ms*depth)
+        S = self.S(N = N*ms*(depth-1),
+                    modes = indice_sqz - N*ms,
+                    r = r)
+        indice_XP = np.concatenate([indice_sqz,indice_sqz+N*ms*depth])
+        self.apply_symplectic(S, indice_XP)
+    
+    def apply_rotation_halfstate(self, theta:float):
+        """Introduce theta phase shift on half of the initial modes. The first i modes are let vaccum.
+         
+        Args:
+            - theta: angle of the rotation matrix, same for all modes
+        
+        Update:
+            Update the covariance matrix and µ vector of the multipartite state"""
+        n, m, k , N, ms, depth = self.n, self.m, self.k, self.N, self.macronode_size, self.spatial_depth
+
+        indice_rot = np.arange(N*ms+1,N*ms*depth,2)
+        P = self.P(N = N*ms*(depth-1)//2,
+                   modes = indice_rot//2 - N*ms,
+                   theta = theta)
+        
+        indice_XP = np.concatenate([indice_rot+N*ms*depth,indice_rot]) # I don"t understand why I have to invert the two indices of Xs an Ps to make the rotation in the good direction. Doing so same for squeezing makes everything collaps.
+        self.apply_symplectic(P, indice_XP)
+
+    def apply_beamsplitter(self, col:int):
+        """Introduce BS operation on all modes listed in BS_indices[col].
+         
+        Args:
+            - col: int, colomn of beamsplitter to apply (in the structure of the cluster)
+        
+        Update:
+            Update the covariance matrix and µ vector of the multipartite state"""
+        n, m, k , N, ms, depth = self.n, self.m, self.k, self.N, self.macronode_size, self.spatial_depth
+        indices = self.BS_indices[col]
+        BS = self.BS(N = 2*len(indices[0]),
+                     modesA = np.arange(len(indices[0])),
+                     modesB = np.arange(len(indices[0]),2*len(indices[0])))
+
+        self.apply_symplectic(BS,np.concatenate([np.concatenate(indices),np.concatenate(indices+N*ms*depth)]))
+
+    ###########################################################################
+    ############################    SIMPLECTIC    #############################
+    ###########################################################################
+    
+    def BS(self, N:int, modesA:np.ndarray, modesB:np.ndarray):
+        """ Create symplectic that apply a beam splitter onto specific modes
+        
+        Args:
+            - N: Number of modes
+            - modesA: list[int] modes A on which to apply the BS operation 
+            - modesB: list[int] modes B on which to apply the BS operation
+        
+        Return:
+            - F: symplectic matrix 2N x 2N"""
+        F = np.eye(2*N)
+        A = np.concatenate([modesA,modesB,modesB,modesA+N,modesB+N,modesB+N])
+        B = np.concatenate([modesA,modesB, modesA,modesA+N,modesB+N,modesA+N])
+        F[A, B] = 1/np.sqrt(2)
+        A = np.concatenate([modesA, modesA+N])
+        B = np.concatenate([modesB, modesB+N])
+        F[A, B] = -1/np.sqrt(2)
+        return F
+
+    def P(self, N:int, modes:np.ndarray, theta:float):
+        """ Create symplectic that apply a phase shift operation onto specific modes
+        
+        Args:
+            - N: Number of modes
+            - modes: list[int] modes on which to apply the BS operation 
+            - theta: angle of the rotation matrix, same for all modes
+        
+        Return:
+            - F: symplectic matrix 2N x 2N"""
+        F = np.eye(2*N)
+        F[modes,modes] = np.cos(theta)
+        F[modes,modes+N] = -np.sin(theta)
+        F[modes+N,modes] = np.sin(theta)
+        F[modes+N,modes+N] = np.cos(theta)
+        return F
+
+    def S(self, N:int, modes:np.ndarray, r:float):
+        """ Create symplectic that apply a squeezing operation onto specific modes
+        
+        Args:
+            - N: Number of modes
+            - modes: list[int] modes on which to apply the BS operation 
+            - r: squeezing parameter, same for all modes
+        
+        Return:
+            - F: symplectic matrix 2N x 2N"""
+        F = np.eye(2*N)
+        F[modes,modes] = np.exp(-r)
+        F[modes+N,modes+N] = np.exp(r)
+        return F
+    
+    ###########################################################################
+    ###########################    MYSCALENIOUS    ############################
+    ###########################################################################
 
     def generate_BS_indice_array(self):
         """ Function that generate a list referencing all the interaction between all the modes for all column of beamsplitters in the set-up.
@@ -78,8 +252,17 @@ class cluster_state():
                                             [    0+6    ,    np.nan    ,      0+7       ,       np.nan      ],
                                             [    np.nan   ,  0+7 + 8*n  ,      np.nan      ,   0+2 + 8*(n-1)  ],
                                             [    np.nan   ,    np.nan    ,      np.nan      ,       np.nan      ]])
+        elif ms == 2:
+            interaction_matrix = np.array([ [    0+1    ,   np.nan          ,        np.nan      ,              np.nan    ,         np.nan   ],
+                                            [    np.nan   ,  0 + 2*1   ,   0 + 2*(1+n)    ,      0 + 2*(1+n+n*m)        ,     0 + 2*(1+n+n*m+n*m*k)   ]])
+            if k == 1:
+                if m == 1:
+                    interaction_matrix = interaction_matrix[:,:-2]
+                else:
+                    interaction_matrix = interaction_matrix[:,:-1]
             
-        i_indices = np.arange(8)
+                            
+        i_indices = np.arange(ms)
         # Mask to identify non-nan values in the interaction matrix
         mask = ~np.isnan(interaction_matrix)
         # Broadcasting the i_indices to match the shape of the interaction_m
@@ -88,7 +271,7 @@ class cluster_state():
         valid_i_to_i7 = [i_to_i7[mask[:, col], col] for col in range(interaction_matrix.shape[1])]
         valid_interactions = [interaction_matrix[mask[:, col], col] for col in range(interaction_matrix.shape[1])]
 
-        self.BS_indices = [self.generate_arrays_from_pairs(valid_i_to_i7[col],valid_interactions[col],ms,N*ms*depth) for col in range(len(valid_i_to_i7))]
+        self.BS_indices = [self.generate_arrays_from_pairs(valid_i_to_i7[col],valid_interactions[col],ms,N*ms*depth-1) for col in range(len(valid_i_to_i7))]
 
     def generate_arrays_from_pairs(self,A, B, step, max_value):
         """ Myscalenious function used to convert a list of starting point into array until max_value with step step.
@@ -131,135 +314,6 @@ class cluster_state():
         results = np.array([np.concatenate(resultA),np.concatenate(resultB)],dtype=np.int64)
         
         return results
-
-
-    def apply_symplectic(self, F:np.ndarray, indices:np.ndarray):
-        """Function that apply a symplectic transformation onto specific modes of the multipartite state
-        
-        Args:
-            - F: symplectic matrix
-            - indices: indices of the mu vector onto wich apply the symplectic 
-        
-        Update:
-            Update the covariance matrix and µ vector of the multipartite state """
-        mu = self.state.mu
-        cov = self.state.cov
-        n, m, k , N, ms, depth = self.n, self.m, self.k, self.N, self.macronode_size, self.spatial_depth
-
-        mu[indices] = F @ mu[indices]
-
-        ar = np.arange(2*N*ms*depth)
-        mask = ~np.isin(ar, indices)
-
-
-        slices = np.ix_(indices,indices)
-        slices_B = np.ix_(indices,ar[mask])
-        slices_C = np.ix_(ar[mask],indices)
-        cov[slices] = F @ cov[slices] @ F.conj().T
-        cov[slices_B] = F @ cov[slices_B] 
-        cov[slices_C] = cov[slices_C] @ F.conj().T
-    
-    def BS(self, N:int, modesA:np.ndarray, modesB:np.ndarray):
-        """ Create symplectic that apply a beam splitter onto specific modes
-        
-        Args:
-            - N: Number of modes
-            - modesA: list[int] modes A on which to apply the BS operation 
-            - modesB: list[int] modes B on which to apply the BS operation
-        
-        Return:
-            - F: symplectic matrix 2N x 2N"""
-        F = np.eye(2*N)
-        print(F.shape)
-        A = np.concatenate([modesA,modesB,modesB,modesA+N,modesB+N,modesB+N])
-        B = np.concatenate([modesA,modesB, modesA,modesA+N,modesB+N,modesA+N])
-        F[A, B] = 1/np.sqrt(2)
-        A = np.concatenate([modesA, modesA+N])
-        B = np.concatenate([modesB, modesB+N])
-        F[A, B] = -1/np.sqrt(2)
-        return F
-
-    def P(self, N:int, modes:np.ndarray, theta:float):
-        """ Create symplectic that apply a phase shift operation onto specific modes
-        
-        Args:
-            - N: Number of modes
-            - modes: list[int] modes on which to apply the BS operation 
-            - theta: angle of the rotation matrix, same for all modes
-        
-        Return:
-            - F: symplectic matrix 2N x 2N"""
-        F = np.eye(2*N)
-        F[modes,modes] = np.cos(theta)
-        F[modes,modes+N] = -np.sin(theta)
-        F[modes+N,modes] = np.sin(theta)
-        F[modes+N,modes+N] = np.cos(theta)
-        return F
-
-    def S(self, N:int, modes:np.ndarray, r:float):
-        """ Create symplectic that apply a squeezing operation onto specific modes
-        
-        Args:
-            - N: Number of modes
-            - modes: list[int] modes on which to apply the BS operation 
-            - r: squeezing parameter, same for all modes
-        
-        Return:
-            - F: symplectic matrix 2N x 2N"""
-        F = np.eye(2*N)
-        F[modes,modes] = np.exp(-r)
-        F[modes+N,modes+N] = np.exp(r)
-        return F
-
-    def apply_squeezing(self, r:float):
-        """Introduce squeezing on the initial modes. The first i modes are let vaccum.
-         
-        Args:
-            - r: squeezing parameter, same for all modes
-
-        Update:
-            Update the covariance matrix and µ vector of the multipartite state """
-        n, m, k , N, ms, depth = self.n, self.m, self.k, self.N, self.macronode_size, self.spatial_depth
-        indice_sqz = np.arange(N*ms,N*ms*depth)
-        S = self.S(N = N*ms*(depth-1),
-                    modes = indice_sqz - N*ms,
-                    r = r)
-        indice_XP = np.concatenate([indice_sqz,indice_sqz+N*ms*depth])
-        self.apply_symplectic(S, indice_XP)
-    
-    def apply_rotation_halfstate(self, theta:float):
-        """Introduce theta phase shift on half of the initial modes. The first i modes are let vaccum.
-         
-        Args:
-            - theta: angle of the rotation matrix, same for all modes
-        
-        Update:
-            Update the covariance matrix and µ vector of the multipartite state"""
-        n, m, k , N, ms, depth = self.n, self.m, self.k, self.N, self.macronode_size, self.spatial_depth
-
-        indice_rot = np.arange(N*ms+1,N*ms*depth,2)
-        P = self.P(N = N*ms*(depth-1)//2,
-                   modes = indice_rot//2 - N*ms,
-                   theta = theta)
-        
-        indice_XP = np.concatenate([indice_rot,indice_rot+N*ms*depth])
-        self.apply_symplectic(P, indice_XP)
-
-    def apply_beamsplitter(self, col:int):
-        """Introduce BS operation on all modes listed in BS_indices[col].
-         
-        Args:
-            - col: int, colomn of beamsplitter to apply (in the structure of the cluster)
-        
-        Update:
-            Update the covariance matrix and µ vector of the multipartite state"""
-        n, m, k , N, ms, depth = self.n, self.m, self.k, self.N, self.macronode_size, self.spatial_depth
-        indices = self.BS_indices[col]
-        BS = self.BS(N = 2*len(indices[0]),
-                     modesA = np.arange(len(indices[0])),
-                     modesB = np.arange(len(indices[0]),2*len(indices[0])))
-
-        self.apply_symplectic(BS,np.concatenate([np.concatenate(indices),np.concatenate(indices+N*ms*depth)]))
 
 
 if __name__ == "__main__":

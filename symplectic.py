@@ -9,8 +9,8 @@ def BS():
 
 def S( r):
     """ Define the symplectic transformation for squeezing"""
-    return np.array([[np.exp(-2*r), 0          ],
-                        [0,            np.exp(2*r)]])
+    return np.array([[np.exp(-r), 0          ],
+                        [0,            np.exp(r)]])
 
 def P(theta):
     """ Define the symplectic transformation for a phase shift"""
