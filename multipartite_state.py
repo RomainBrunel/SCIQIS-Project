@@ -64,6 +64,10 @@ class cluster_state():
         self.generate_BS_indice_array()
 
     def generate_BS_indice_array(self):
+        """ Function that generate a list referencing all the interaction between all the modes for all column of beamsplitters in the set-up.
+        
+        Update:
+            - self.BS_indices: list of 2D numpy arrays containing the all modes 'A' in the first dimension and the respective modes 'B' in the second dimension."""
         n, m, k , N, ms, depth = self.n, self.m, self.k, self.N, self.macronode_size, self.spatial_depth
         if ms == 8:
             interaction_matrix = np.array([ [    0+7    ,  0+1 + 8*n*m ,  0+2 + 8*(n*m-1) ,       np.nan      ],
@@ -87,6 +91,16 @@ class cluster_state():
         self.BS_indices = [self.generate_arrays_from_pairs(valid_i_to_i7[col],valid_interactions[col],ms,N*ms*depth) for col in range(len(valid_i_to_i7))]
 
     def generate_arrays_from_pairs(self,A, B, step, max_value):
+        """ Myscalenious function used to convert a list of starting point into array until max_value with step step.
+        
+        Args:
+            - A: list of starting index of the A port of the beamsplitter
+            - B: list of starting index of the B port of the beamsplitter
+            - step: step between modes in the array (length of the macronode)
+            - max_value: last modes on which to apply a beam splitter operation
+        
+        Return:
+            results: 2D numpy array 2D numpy arrays containing the all modes 'A' in the first dimension and the respective modes 'B' in the second dimension."""
         # Convert the input lists to NumPy arrays
         A_array = np.array(A)
         B_array = np.array(B)
@@ -214,7 +228,7 @@ class cluster_state():
         self.apply_symplectic(S, indice_XP)
     
     def rotate_half_state(self, theta:float):
-        """Introduce pi/2 phase shift on half of the initial modes. The first i modes are let vaccum.
+        """Introduce theta phase shift on half of the initial modes. The first i modes are let vaccum.
          
         Args:
             - theta: angle of the rotation matrix, same for all modes
@@ -231,15 +245,23 @@ class cluster_state():
         indice_XP = np.concatenate([indice_rot,indice_rot+N*ms*depth])
         self.apply_symplectic(P, indice_XP)
 
-    def apply_beamsplitter(self, row:int):
+    def apply_beamsplitter(self, col:int):
+        """Introduce BS operation on all modes listed in BS_indices[col].
+         
+        Args:
+            - col: int, colomn of beamsplitter to apply (in the structure of the cluster)
+        
+        Update:
+            Update the covariance matrix and µ vector of the multipartite state"""
         n, m, k , N, ms, depth = self.n, self.m, self.k, self.N, self.macronode_size, self.spatial_depth
-        indices = self.BS_indices[row]
+        indices = self.BS_indices[col]
         BS = self.BS(N = 2*len(indices[0]),
                      modesA = np.arange(len(indices[0])),
                      modesB = np.arange(len(indices[0]),2*len(indices[0])))
 
         print(BS.shape)
         self.apply_symplectic(BS,np.concatenate([np.concatenate(indices),np.concatenate(indices+N*ms*depth)]))
+
 
 if __name__ == "__main__":
     cs = cluster_state()
