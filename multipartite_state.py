@@ -211,7 +211,7 @@ class cluster_state():
         F[modes+N,modes+N] = np.exp(r)
         return F
 
-    def squeeze_initial_state(self, r:float):
+    def apply_squeezing(self, r:float):
         """Introduce squeezing on the initial modes. The first i modes are let vaccum.
          
         Args:
@@ -227,7 +227,7 @@ class cluster_state():
         indice_XP = np.concatenate([indice_sqz,indice_sqz+N*ms*depth])
         self.apply_symplectic(S, indice_XP)
     
-    def rotate_half_state(self, theta:float):
+    def apply_rotation_halfstate(self, theta:float):
         """Introduce theta phase shift on half of the initial modes. The first i modes are let vaccum.
          
         Args:
@@ -259,7 +259,6 @@ class cluster_state():
                      modesA = np.arange(len(indices[0])),
                      modesB = np.arange(len(indices[0]),2*len(indices[0])))
 
-        print(BS.shape)
         self.apply_symplectic(BS,np.concatenate([np.concatenate(indices),np.concatenate(indices+N*ms*depth)]))
 
 
