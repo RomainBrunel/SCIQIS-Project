@@ -9,8 +9,11 @@ class multipartite_state():
             - number_of_modes: int dimension of the multipartite state"""
         self.mu = np.zeros(2*number_of_modes)
         self.cov = np.eye(2*number_of_modes)*hbar/2
+
+
     
     def plot_cov_matrix(self):
+        print(self.cov.shape)
         plt.figure("Covariance matrix of the system")
         plt.imshow(self.cov,cmap="viridis")
         plt.colorbar()
@@ -19,6 +22,7 @@ class multipartite_state():
         plt.title("Covariance matrix of the system")
 
     def plot_mean_matrix(self):
+
         plt.figure(r"$\Mu$ vector")
         plt.imshow(self.mu.reshape(-1,1),aspect=0.1,cmap="viridis")
         plt.ylabel("modes")
@@ -97,6 +101,84 @@ class cluster_state():
             self.apply_beamsplitter(col=i)
             if i ==0:
                 self.apply_rotation_halfstate(theta=np.pi/2)
+    
+    def measurement_gaussian(self, modes:np.ndarray, thetas:np.ndarray):
+        """ Measure the X(theta) quadrature of the desired modes and plot the resulted wigner function
+        
+        Args:
+            - modes: list of modes to with measure the x quadrature
+            - theta: list of angles to wich the measurement will be apply
+            """
+        
+        self.apply_rotation(modes,thetas)
+        mu, cov, u = self.measurement_X(modes)
+        n = len(mu)//2
+
+        def wigner(r):
+            norm_factor = 1 / ((2 * np.pi) ** n * np.sqrt(np.linalg.det(cov)))
+            exponent = -0.5 * (r - mu).T @ np.linalg.inv(cov) @ (r - mu)
+            return norm_factor * np.exp(exponent)
+
+        x_values = np.linspace(-3, 3, 100)
+        p_values = np.linspace(-3, 3, 100)
+        X, P = np.meshgrid(x_values, p_values)
+
+        W = np.zeros(X.shape)
+        for i in range(X.shape[0]):
+            for j in range(X.shape[1]):
+                r = np.array([X[i, j], P[i, j]])
+                W[i, j] = wigner(r)
+
+        plt.figure(figsize=(8, 6))
+        plt.contourf(X, P, W, levels=100, cmap='viridis')
+        plt.colorbar(label='Wigner Function Value')
+        plt.xlabel('x')
+        plt.ylabel('p')
+        plt.title('Wigner Function in Phase Space')
+        plt.show()
+
+    
+    def measurement_X(self, modes: np.ndarray):
+        """ Measure the X quadrature of the desired modes
+        
+        Args:
+            - modes: list of modes to with measure the x quadrature
+            
+        Return:
+            - mu: displacement vector resulted from the measurement
+            - cov: covariance matrix resulted from the measurement"""
+        
+        n, m, k , N, ms, depth = self.n, self.m, self.k, self.N, self.macronode_size, self.spatial_depth
+        mu, cov = self.state.mu, self.state.cov
+
+        indices = np.concatenate([modes,modes + N*ms*depth])
+        ar = np.arange(2*N*ms*depth)
+        mask = ~np.isin(ar, indices)
+
+        slices_B = np.ix_(indices,indices)
+        slices_Ct = np.ix_(indices,ar[mask])
+        slices_C = np.ix_(ar[mask],indices)
+        slices_A = np.ix_(ar[mask],ar[mask])
+
+        A = cov[slices_A].copy()
+        B = cov[slices_B].copy()
+        C = cov[slices_C].copy()
+
+        PI = np.eye(2 * len(modes))
+        PI[len(modes):, len(modes):] = 0
+        cov = A - C @ np.linalg.pinv(PI @ B @ PI) @ C.T
+
+        a = mu[ar[mask]]
+        b = mu[indices]
+
+        mean = PI @ b
+        var = np.diagonal(B)
+        distribution = np.vectorize(np.random.normal)
+        u = distribution(mean,var)
+
+        mu = a - C @ np.linalg.pinv(PI @ B @ PI) @ (b - u)
+
+        return mu, cov, u
         
     ###########################################################################
     #########################    STATE EVOLUTION    ###########################
@@ -121,12 +203,12 @@ class cluster_state():
         mask = ~np.isin(ar, indices)
 
 
-        slices = np.ix_(indices,indices)
-        slices_B = np.ix_(indices,ar[mask])
+        slices_B = np.ix_(indices,indices)
+        slices_Ct = np.ix_(indices,ar[mask])
         slices_C = np.ix_(ar[mask],indices)
-        cov[slices] = F @ cov[slices] @ F.conj().T
-        cov[slices_B] = F @ cov[slices_B] 
+        cov[slices_B] = F @ cov[slices_B] @ F.conj().T 
         cov[slices_C] = cov[slices_C] @ F.conj().T
+        cov[slices_Ct] = cov[slices_C].T
     
     def apply_squeezing(self, r:float):
         """Introduce squeezing on the initial modes. The first i modes are let vaccum.
@@ -143,6 +225,24 @@ class cluster_state():
                     r = r)
         indice_XP = np.concatenate([indice_sqz,indice_sqz+N*ms*depth])
         self.apply_symplectic(S, indice_XP)
+
+    def apply_rotation(self, modes:np.ndarray, thetas:np.ndarray):
+        """Introduce theta phase shift on desired modes.
+         
+        Args:
+            - modes: to which apply the rotation
+            - theta: angles of the rotation matrix
+        
+        Update:
+            Update the covariance matrix and µ vector of the multipartite state"""
+        n, m, k , N, ms, depth = self.n, self.m, self.k, self.N, self.macronode_size, self.spatial_depth
+
+        P = self.P(N = len(modes),
+                   modes = np.arange(len(modes)),
+                   theta = thetas)
+        
+        indice_XP = np.concatenate([modes+N*ms*depth,modes]) # I don"t understand why I have to invert the two indices of Xs an Ps to make the rotation in the good direction. Doing so same for squeezing makes everything collaps.
+        self.apply_symplectic(P, indice_XP)
     
     def apply_rotation_halfstate(self, theta:float):
         """Introduce theta phase shift on half of the initial modes. The first i modes are let vaccum.
