@@ -85,6 +85,7 @@ class cluster_state():
         self.k = k
         self.state = multipartite_state(number_of_modes = spatial_depth*self.macronode_size*self.N)
         self.generate_BS_indice_array()
+        self.generate_macronodes()
 
     ###########################################################################
     ############################    SIMULATION    #############################
@@ -101,8 +102,63 @@ class cluster_state():
             self.apply_beamsplitter(col=i)
             if i ==0:
                 self.apply_rotation_halfstate(theta=np.pi/2)
-    
-    def measurement_gaussian(self, modes:np.ndarray, thetas:np.ndarray):
+
+    ###########################################################################
+    ############################    MEASUREMENT    ############################
+    ###########################################################################
+
+    def measurement_based_squeezing(self, macronode_number:int):
+        n, m, k , N, ms, depth = self.n, self.m, self.k, self.N, self.macronode_size, self.spatial_depth
+        mu, cov = self.state.mu, self.state.cov
+
+        modes = self.macronode + macronode_number*ms
+
+        Xip = np.pi/2 + np.arctan(2)
+        Xim = np.pi/2 - np.arctan(2)
+        thetas = np.array([Xip, Xim, Xip, Xim, Xip, Xim, Xip, Xim])
+        m, c, u = self.measurement_gaussian(modes, thetas)
+
+        indices = self.macronode_output + macronode_number*ms
+        slices_C = np.ix_(np.concatenate([indices,indices+N*ms*depth]),np.concatenate([indices,indices+N*ms*depth]))
+        slices_A = np.ix_(np.concatenate([modes,modes+N*ms*depth]),np.concatenate([modes,indices+N*ms*depth]))
+        A = cov[slices_A]    # cov matrix of the macronode measured
+
+        slices_0 = np.ix_([0,8],[0,8]) 
+        slices_1 = np.ix_([1,9],[1,9]) 
+        slices_2 = np.ix_([2,10],[2,10]) 
+        slices_3 = np.ix_([3,11],[3,11]) 
+        slices_4 = np.ix_([4,12],[4,12]) 
+        slices_5 = np.ix_([5,13],[5,13]) 
+        slices_6 = np.ix_([6,14],[6,14]) 
+        slices_7 = np.ix_([7,15],[7,15]) 
+
+        A0 = A[slices_0] # cov matrix of the measured modes 0 of the macronode
+        A2 = A[slices_2] # cov matrix of the measured modes 2 of the macronode
+        A4 = A[slices_4] # cov matrix of the measured modes 4 of the macronode
+        A6 = A[slices_6] # cov matrix of the measured modes 6 of the macronode
+
+        S = self.S(1,np.array([0]),1)
+        print(S)
+
+        A0_out = S @ A0 @ S.conj().T # Expected cov matrix for the output state 
+        A2_out = S @ A2 @ S.conj().T # Expected cov matrix for the output state 
+        A4_out = S @ A4 @ S.conj().T # Expected cov matrix for the output state 
+        A6_out = S @ A6 @ S.conj().T # Expected cov matrix for the output state  
+        
+        C = c[slices_C]
+        C1 = C[slices_1] # cov matrix of the measured modes 1 of the macronode
+        C3 = C[slices_3] # cov matrix of the measured modes 3 of the macronode
+        C5 = C[slices_5] # cov matrix of the measured modes 5 of the macronode
+        C7 = C[slices_7] # cov matrix of the measured modes 7 of the macronode     
+
+        print(r"$S_{0\rightarrow1}$:"+f"{np.allclose(A0_out,C1)}", np.abs(A0_out - C1))    
+        print(r"$S_{2\rightarrow3}$:"+f"{np.allclose(A2_out,C3)}", np.abs(A2_out - C3)) 
+        print(r"$S_{4\rightarrow5}$:"+f"{np.allclose(A4_out,C5)}", np.abs(A4_out - C5)) 
+        print(r"$S_{6\rightarrow7}$:"+f"{np.allclose(A6_out,C7)}", np.abs(A6_out - C7)) 
+        print(A)
+        print(C)    
+
+    def measurement_gaussian(self, modes:np.ndarray, thetas:np.ndarray, plot=False):
         """ Measure the X(theta) quadrature of the desired modes and plot the resulted wigner function
         
         Args:
@@ -112,31 +168,31 @@ class cluster_state():
         
         self.apply_rotation(modes,thetas)
         mu, cov, u = self.measurement_X(modes)
-        n = len(mu)//2
+        if plot :
+            n = len(mu)//2
+            def wigner(r):
+                norm_factor = 1 / ((2 * np.pi) ** n * np.sqrt(np.linalg.det(cov)))
+                exponent = -0.5 * (r - mu).T @ np.linalg.inv(cov) @ (r - mu)
+                return norm_factor * np.exp(exponent)
 
-        def wigner(r):
-            norm_factor = 1 / ((2 * np.pi) ** n * np.sqrt(np.linalg.det(cov)))
-            exponent = -0.5 * (r - mu).T @ np.linalg.inv(cov) @ (r - mu)
-            return norm_factor * np.exp(exponent)
+            x_values = np.linspace(-3, 3, 100)
+            p_values = np.linspace(-3, 3, 100)
+            X, P = np.meshgrid(x_values, p_values)
 
-        x_values = np.linspace(-3, 3, 100)
-        p_values = np.linspace(-3, 3, 100)
-        X, P = np.meshgrid(x_values, p_values)
+            W = np.zeros(X.shape)
+            for i in range(X.shape[0]):
+                for j in range(X.shape[1]):
+                    r = np.array([X[i, j], P[i, j]])
+                    W[i, j] = wigner(r)
 
-        W = np.zeros(X.shape)
-        for i in range(X.shape[0]):
-            for j in range(X.shape[1]):
-                r = np.array([X[i, j], P[i, j]])
-                W[i, j] = wigner(r)
-
-        plt.figure(figsize=(8, 6))
-        plt.contourf(X, P, W, levels=100, cmap='viridis')
-        plt.colorbar(label='Wigner Function Value')
-        plt.xlabel('x')
-        plt.ylabel('p')
-        plt.title('Wigner Function in Phase Space')
-        plt.show()
-
+            plt.figure(figsize=(8, 6))
+            plt.contourf(X, P, W, levels=100, cmap='viridis')
+            plt.colorbar(label='Wigner Function Value')
+            plt.xlabel('x')
+            plt.ylabel('p')
+            plt.title('Wigner Function in Phase Space')
+            plt.show()
+        return mu, cov, u
     
     def measurement_X(self, modes: np.ndarray):
         """ Measure the X quadrature of the desired modes
@@ -372,6 +428,16 @@ class cluster_state():
         valid_interactions = [interaction_matrix[mask[:, col], col] for col in range(interaction_matrix.shape[1])]
 
         self.BS_indices = [self.generate_arrays_from_pairs(valid_i_to_i7[col],valid_interactions[col],ms,N*ms*depth-1) for col in range(len(valid_i_to_i7))]
+
+    def generate_macronodes(self):
+        """Function that generate the indices of modes that represent a unique macronodes.
+        one macronode : { i - 8nm ; i+1 ; i+2 - 8 ; i+3; i+4 - 8nmk ; i+5 ; i+6 - 8n ; i+7}
+        Representation with future only : { i + 8(nmk - nm) ; i+1 + 8nmk ; i+2 + 8(nmk + 1) ; i+3 + 8nmk ; i+4 ; i+5 + 8nmk ; i+6 + 8(nmk-n) ; i+7 + 8nmk}"""
+        n, m, k , N, ms, depth = self.n, self.m, self.k, self.N, self.macronode_size, self.spatial_depth
+        if ms == 8:
+            self.macronode = np.array([0 + 8*(n*m*k - n*m) , 0+1 + 8*n*m*k , 0+2 + 8*(n*m*k + 1) , 0+3 + 8*n*m*k , 0+4 , 0+5 + 8*n*m*k , 0+6 + 8*(n*m*k-n) , 0+7 + 8*n*m*k])
+            entangled_to_macronode = np.array([0 + 8*(n*m*k - n*m) + 7 , 0+1 + 8*n*m*k + 1, 0+2 + 8*(n*m*k + 1) -1, 0+3 + 8*n*m*k + 1, 0+4 - 1, 0+5 + 8*n*m*k + 1, 0+6 + 8*(n*m*k-n) - 1, 0+7 + 8*n*m*k - 7])
+            self.macronode_output = entangled_to_macronode - np.array([-2,-5,-3,-6,0,-7,2,-7])  # Indices of the output after tracing out measurement onto the macronode
 
     def generate_arrays_from_pairs(self,A, B, step, max_value):
         """ Myscalenious function used to convert a list of starting point into array until max_value with step step.
