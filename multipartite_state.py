@@ -20,6 +20,8 @@ class multipartite_state():
             return im
         else:
             fig,ax = plt.subplots()
+            fig.set_figheight(15)
+            fig.set_figwidth(15)
             ax.imshow(self.cov,cmap= "seismic", norm=norm)
             num_modes = self.cov.shape[0]//2
 
@@ -46,11 +48,30 @@ class multipartite_state():
             fig.colorbar(mpl.cm.ScalarMappable(norm= norm, cmap=mpl.colormaps.get_cmap("seismic")),ax = ax)
             
     def plot_mean_matrix(self):
+        norm = mpl.colors.Normalize(vmin=-1, vmax=1)
+        fig, ax = plt.subplots()
+        ax.imshow(self.mu.reshape(-1,1),aspect=0.01,cmap="seismic",norm = norm)
+        num_modes = self.cov.shape[0]//2
 
-        plt.figure(r"$\Mu$ vector")
-        plt.imshow(self.mu.reshape(-1,1),aspect=0.1,cmap="seismic")
-        plt.ylabel("modes")
-        plt.colorbar()
+        # Set custom x-axis labels with numbering
+        first_X_index = 0
+        first_P_index = num_modes
+        middle_X_index = num_modes // 2
+        middle_P_index = num_modes + middle_X_index
+        last_P_index = 2 * num_modes - 1
+
+        # Set custom x-axis labels at specified positions
+        xticks = [first_X_index, first_P_index, middle_X_index, middle_P_index, last_P_index]
+        xticklabels = [
+        f"modes X{first_X_index + 1}",
+        f"modes P{first_P_index - num_modes + 1}",
+        f"modes X{middle_X_index + 1}",
+        f"modes P{middle_P_index - num_modes + 1}",
+        f"modes P{last_P_index - num_modes + 1}"
+        ]
+        ax.set_yticks(xticks)
+        ax.set_yticklabels(xticklabels, rotation=45, ha="right")
+        fig.colorbar(mpl.cm.ScalarMappable(norm= norm, cmap=mpl.colormaps.get_cmap("seismic")),ax = ax)
 
 class cluster_state():
     """ Define the interferometer that will be the source of the generation of the 4D cluster state and perform the computations.
