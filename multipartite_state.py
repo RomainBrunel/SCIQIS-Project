@@ -136,63 +136,75 @@ class cluster_state():
     ############################    SIMULATION    #############################
     ###########################################################################
 
-    def run_calculation(self, r):
-        """Run the calculation for the structure of the cluster state and save a gif for the evolution od the covariance matrix of the state.
+    def run_calculation(self, r, gif = False):
+        """Run the calculation for the structure of the cluster state and save a gif for the evolution of the covariance matrix of the state.
         
         Args: 
-            - r: squeezing parameter of the input states"""
-        fig, ax= plt.subplots()
-        fig.set_figheight(15)
-        fig.set_figwidth(15)
-        ims = []
-        norm = mpl.colors.Normalize(vmin=-1, vmax=1)
+            - r: squeezing parameter of the input states
+            - gif: True create a gif of the covariance matrix evolution during the creation of the cluster state"""
+        if gif:
+            fig, ax= plt.subplots()
+            fig.set_figheight(15)
+            fig.set_figwidth(15)
+            ims = []
+            norm = mpl.colors.Normalize(vmin=-1, vmax=1)
 
-        title = ax.text(0.5, 1.05, "Squeezing operation", 
-                    transform=ax.transAxes, ha="center", fontsize=16)
+            title = ax.text(0.5, 1.05, "Squeezing operation", 
+                        transform=ax.transAxes, ha="center", fontsize=16)
+            
         self.apply_squeezing(r)
-        ims.append([self.state.plot_cov_matrix(ax = ax,save = True, norm = norm),title])
 
-        title = ax.text(0.5, 1.05, "Rotation operation", 
-                    transform=ax.transAxes, ha="center", fontsize=16)
+        if gif:
+            ims.append([self.state.plot_cov_matrix(ax = ax,save = True, norm = norm),title])
+
+            title = ax.text(0.5, 1.05, "Rotation operation", 
+                        transform=ax.transAxes, ha="center", fontsize=16)
+            
         self.apply_rotation_halfstate(theta=-np.pi/2)
-        ims.append([self.state.plot_cov_matrix(ax = ax,save = True, norm = norm),title])
+        if gif : 
+            ims.append([self.state.plot_cov_matrix(ax = ax,save = True, norm = norm),title])
         
         for i in range(len(self.BS_indices)):
-            title = ax.text(0.5, 1.05, f"Beam splitter {i} operation", 
-                    transform=ax.transAxes, ha="center", fontsize=16)
+            if gif:
+                title = ax.text(0.5, 1.05, f"Beam splitter {i} operation", 
+                        transform=ax.transAxes, ha="center", fontsize=16)
             self.apply_beamsplitter(col=i)
-            ims.append([self.state.plot_cov_matrix(ax = ax,save = True, norm = norm),title])
-            if i ==0:
-                title = ax.text(0.5, 1.05, "Rotation operation", 
-                    transform=ax.transAxes, ha="center", fontsize=16)
-                self.apply_rotation_halfstate(theta=np.pi/2)
+            if gif:
                 ims.append([self.state.plot_cov_matrix(ax = ax,save = True, norm = norm),title])
+            if i ==0:
+                if gif:
+                    title = ax.text(0.5, 1.05, "Rotation operation", 
+                        transform=ax.transAxes, ha="center", fontsize=16)
+                self.apply_rotation_halfstate(theta=np.pi/2)
+                if gif:
+                    ims.append([self.state.plot_cov_matrix(ax = ax,save = True, norm = norm),title])
 
-        num_modes = self.N*self.macronode_size*self.spatial_depth
+        if gif:
+            num_modes = self.N*self.macronode_size*self.spatial_depth
 
-        # Set custom x-axis labels with numbering
-        first_X_index = 0
-        first_P_index = num_modes
-        middle_X_index = num_modes // 2
-        middle_P_index = num_modes + middle_X_index
-        last_P_index = 2 * num_modes - 1
+            # Set custom x-axis labels with numbering
+            first_X_index = 0
+            first_P_index = num_modes
+            middle_X_index = num_modes // 2
+            middle_P_index = num_modes + middle_X_index
+            last_P_index =2 * num_modes - 1
 
-        # Set custom x-axis labels at specified positions
-        xticks = [first_X_index, first_P_index, middle_X_index, middle_P_index, last_P_index]
-        xticklabels = [
-        f"modes X{first_X_index + 1}",
-        f"modes P{first_P_index - num_modes + 1}",
-        f"modes X{middle_X_index + 1}",
-        f"modes P{middle_P_index - num_modes + 1}",
-        f"modes P{last_P_index - num_modes + 1}"
-        ]
-        ax.set_xticks(xticks)
-        ax.set_xticklabels(xticklabels, rotation=45, ha="right")
-        ax.set_yticks(xticks)
-        ax.set_yticklabels(xticklabels, rotation=45, ha="right")
-        fig.colorbar(mpl.cm.ScalarMappable(norm= norm, cmap=mpl.colormaps.get_cmap("seismic")),ax = ax)
-        ani = animation.ArtistAnimation(fig,ims,interval=2000,blit =True)
-        ani.save("Cluster covariance matrix animation.gif")
+            # Set custom x-axis labels at specified positions
+            xticks = [first_X_index, first_P_index, middle_X_index, middle_P_index, last_P_index]
+            xticklabels = [
+            f"modes X{first_X_index + 1}",
+            f"modes P{first_P_index - num_modes + 1}",
+            f"modes X{middle_X_index + 1}",
+            f"modes P{middle_P_index - num_modes + 1}",
+            f"modes P{last_P_index - num_modes + 1}"
+            ]
+            ax.set_xticks(xticks)
+            ax.set_xticklabels(xticklabels, rotation=45, ha="right")
+            ax.set_yticks(xticks)
+            ax.set_yticklabels(xticklabels, rotation=45, ha="right")
+            fig.colorbar(mpl.cm.ScalarMappable(norm= norm, cmap=mpl.colormaps.get_cmap("seismic")),ax = ax)
+            ani = animation.ArtistAnimation(fig,ims,interval=2000,blit =True)
+            ani.save("Cluster covariance matrix animation.gif")
          
     ###########################################################################
     ############################    MEASUREMENT    ############################
