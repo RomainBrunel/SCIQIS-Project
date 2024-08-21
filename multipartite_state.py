@@ -2,6 +2,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.animation as animation
 import matplotlib as mpl
+import h5py as h
 
 class multipartite_state():
     def __init__(self, number_of_modes:int, hbar = 1) -> None:
@@ -11,8 +12,6 @@ class multipartite_state():
             - number_of_modes: int dimension of the multipartite state"""
         self.mu = np.zeros(2*number_of_modes)
         self.cov = np.eye(2*number_of_modes)*hbar/2
-
-
     
     def plot_cov_matrix(self, ax = None,norm = mpl.colors.Normalize(vmin=-1, vmax=1), save:bool = False):        
         if save: 
@@ -72,6 +71,7 @@ class multipartite_state():
         ax.set_yticks(xticks)
         ax.set_yticklabels(xticklabels, rotation=45, ha="right")
         fig.colorbar(mpl.cm.ScalarMappable(norm= norm, cmap=mpl.colormaps.get_cmap("seismic")),ax = ax)
+    
 
 class cluster_state():
     """ Define the interferometer that will be the source of the generation of the 4D cluster state and perform the computations.
@@ -81,7 +81,7 @@ class cluster_state():
 
     Args:   
         - spatial_depth: depth of the spatial interferometer in the spatial dimension
-        - n, m, k: int number of modes in the different loops. number_of_modes = n * m * k
+        - n, m, k: int number of modes in the different loops
         - structure: str {octo, dual} structure of the interferometer
     
     To simulate 2D dual put m=k=1
@@ -132,16 +132,35 @@ class cluster_state():
         self.generate_BS_indice_array()
         self.generate_macronodes()
 
+    def open_calculation(self, filename):
+        """ Open a previous calculation from an hdf5 file
+        
+        Args:
+            - filename: name of the file to open"""
+        with h.File(filename,'r') as f:
+            self.spatial_depth = f.attrs["Depth"]
+            self.n = f.attrs["n"]
+            self.m = f.attrs["m"]
+            self.k = f.attrs["k"]
+            self.N = self.n*self.m*self.k 
+            self.macronode_size = f.attrs["Macronode_size"]
+            self.state.cov = np.array(f["Covariance matrix"][:])
+            self.state.mu = np.array(f["Mean vector"][:])
+        self.generate_BS_indice_array()
+        self.generate_macronodes()
+
     ###########################################################################
     ############################    SIMULATION    #############################
     ###########################################################################
 
-    def run_calculation(self, r, gif = False):
+    def run_calculation(self, r, gif = False, save:bool = False, filename:str = "Cluster_state_simulation.hdf5"):
         """Run the calculation for the structure of the cluster state and save a gif for the evolution of the covariance matrix of the state.
         
         Args: 
             - r: squeezing parameter of the input states
-            - gif: True create a gif of the covariance matrix evolution during the creation of the cluster state"""
+            - gif: True create a gif of the covariance matrix evolution during the creation of the cluster state
+            - save: True save the cov and mu as a h5 file with name filename
+            - filename: name of the file to save"""
         if gif:
             fig, ax= plt.subplots()
             fig.set_figheight(15)
@@ -206,9 +225,28 @@ class cluster_state():
             ani = animation.ArtistAnimation(fig,ims,interval=2000,blit =True)
             ani.save("Cluster covariance matrix animation.gif")
         
+        if save:
+            self.save_calculation(filename, r)
+        
     def reset_calculation(self):
         """Function that reset the multipartite state to vaccum"""
         self.state = multipartite_state(number_of_modes = self.spatial_depth*self.macronode_size*self.N)
+    
+    def save_calculation(self, filename:str, r:float):
+        """Function that save all metadata and covariance matrix and mean vector of the multipartite state
+        
+        Args:
+            - filename: name of the file
+            - r: float squeezing parameter"""
+        with h.File(filename,'w') as f:
+            f.create_dataset('Covariance matrix',data=self.state.cov)
+            f.create_dataset('Mean vector',data=self.state.mu)
+            f.attrs["n"] = self.n
+            f.attrs["m"] = self.m
+            f.attrs["k"] = self.k
+            f.attrs["Depth"] = self.spatial_depth
+            f.attrs["Macronode_size"] = self.macronode_size
+            f.attrs["Squeezing parameter"] = r
          
     ###########################################################################
     ############################    MEASUREMENT    ############################
