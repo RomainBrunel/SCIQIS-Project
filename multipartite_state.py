@@ -268,7 +268,7 @@ class cluster_state():
             - modes: list of modes to with measure the x quadrature
             - theta: list of angles to wich the measurement will be apply
             """
-        
+        norm = mpl.colors.Normalize(vmin=-1, vmax=1)
         self.apply_rotation(modes,thetas)
         mu, cov, u = self.measurement_X(modes)
         if plot :
@@ -289,7 +289,7 @@ class cluster_state():
                     W[i, j] = wigner(r)
 
             plt.figure(figsize=(8, 6))
-            plt.contourf(X, P, W, levels=100, cmap='viridis')
+            plt.contourf(X, P, W, levels=100, cmap='seismic', norm = norm)
             plt.colorbar(label='Wigner Function Value')
             plt.xlabel('x')
             plt.ylabel('p')
