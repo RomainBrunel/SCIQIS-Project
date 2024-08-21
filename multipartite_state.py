@@ -1,5 +1,7 @@
 import numpy as np
 import matplotlib.pyplot as plt
+import matplotlib.animation as animation
+import matplotlib as mpl
 
 class multipartite_state():
     def __init__(self, number_of_modes:int, hbar = 1) -> None:
@@ -12,19 +14,41 @@ class multipartite_state():
 
 
     
-    def plot_cov_matrix(self):
-        print(self.cov.shape)
-        plt.figure("Covariance matrix of the system")
-        plt.imshow(self.cov,cmap="viridis")
-        plt.colorbar()
-        plt.xlabel("modes")
-        plt.ylabel("modes")
-        plt.title("Covariance matrix of the system")
+    def plot_cov_matrix(self, ax = None,norm = mpl.colors.Normalize(vmin=-1, vmax=1), save:bool = False):        
+        if save: 
+            im = ax.imshow(self.cov,cmap="seismic", norm=norm)
+            return im
+        else:
+            fig,ax = plt.subplots()
+            ax.imshow(self.cov,cmap= "seismic", norm=norm)
+            num_modes = self.cov.shape[0]//2
 
+            # Set custom x-axis labels with numbering
+            first_X_index = 0
+            first_P_index = num_modes
+            middle_X_index = num_modes // 2
+            middle_P_index = num_modes + middle_X_index
+            last_P_index = 2 * num_modes - 1
+
+            # Set custom x-axis labels at specified positions
+            xticks = [first_X_index, first_P_index, middle_X_index, middle_P_index, last_P_index]
+            xticklabels = [
+            f"modes X{first_X_index + 1}",
+            f"modes P{first_P_index - num_modes + 1}",
+            f"modes X{middle_X_index + 1}",
+            f"modes P{middle_P_index - num_modes + 1}",
+            f"modes P{last_P_index - num_modes + 1}"
+            ]
+            ax.set_xticks(xticks)
+            ax.set_xticklabels(xticklabels, rotation=45, ha="right")
+            ax.set_yticks(xticks)
+            ax.set_yticklabels(xticklabels, rotation=45, ha="right")
+            fig.colorbar(mpl.cm.ScalarMappable(norm= norm, cmap=mpl.colormaps.get_cmap("seismic")),ax = ax)
+            
     def plot_mean_matrix(self):
 
         plt.figure(r"$\Mu$ vector")
-        plt.imshow(self.mu.reshape(-1,1),aspect=0.1,cmap="viridis")
+        plt.imshow(self.mu.reshape(-1,1),aspect=0.1,cmap="seismic")
         plt.ylabel("modes")
         plt.colorbar()
 
@@ -92,17 +116,63 @@ class cluster_state():
     ###########################################################################
 
     def run_calculation(self, r):
-        """Run the calculation for the structure of the cluster state
+        """Run the calculation for the structure of the cluster state and save a gif for the evolution od the covariance matrix of the state.
         
         Args: 
             - r: squeezing parameter of the input states"""
-        self.apply_squeezing(r)
-        self.apply_rotation_halfstate(theta=-np.pi/2)
-        for i in range(len(self.BS_indices)):
-            self.apply_beamsplitter(col=i)
-            if i ==0:
-                self.apply_rotation_halfstate(theta=np.pi/2)
+        fig, ax= plt.subplots()
+        fig.set_figheight(15)
+        fig.set_figwidth(15)
+        ims = []
+        norm = mpl.colors.Normalize(vmin=-1, vmax=1)
 
+        title = ax.text(0.5, 1.05, "Squeezing operation", 
+                    transform=ax.transAxes, ha="center", fontsize=16)
+        self.apply_squeezing(r)
+        ims.append([self.state.plot_cov_matrix(ax = ax,save = True, norm = norm),title])
+
+        title = ax.text(0.5, 1.05, "Rotation operation", 
+                    transform=ax.transAxes, ha="center", fontsize=16)
+        self.apply_rotation_halfstate(theta=-np.pi/2)
+        ims.append([self.state.plot_cov_matrix(ax = ax,save = True, norm = norm),title])
+        
+        for i in range(len(self.BS_indices)):
+            title = ax.text(0.5, 1.05, f"Beam splitter {i} operation", 
+                    transform=ax.transAxes, ha="center", fontsize=16)
+            self.apply_beamsplitter(col=i)
+            ims.append([self.state.plot_cov_matrix(ax = ax,save = True, norm = norm),title])
+            if i ==0:
+                title = ax.text(0.5, 1.05, "Rotation operation", 
+                    transform=ax.transAxes, ha="center", fontsize=16)
+                self.apply_rotation_halfstate(theta=np.pi/2)
+                ims.append([self.state.plot_cov_matrix(ax = ax,save = True, norm = norm),title])
+
+        num_modes = self.N*self.macronode_size*self.spatial_depth
+
+        # Set custom x-axis labels with numbering
+        first_X_index = 0
+        first_P_index = num_modes
+        middle_X_index = num_modes // 2
+        middle_P_index = num_modes + middle_X_index
+        last_P_index = 2 * num_modes - 1
+
+        # Set custom x-axis labels at specified positions
+        xticks = [first_X_index, first_P_index, middle_X_index, middle_P_index, last_P_index]
+        xticklabels = [
+        f"modes X{first_X_index + 1}",
+        f"modes P{first_P_index - num_modes + 1}",
+        f"modes X{middle_X_index + 1}",
+        f"modes P{middle_P_index - num_modes + 1}",
+        f"modes P{last_P_index - num_modes + 1}"
+        ]
+        ax.set_xticks(xticks)
+        ax.set_xticklabels(xticklabels, rotation=45, ha="right")
+        ax.set_yticks(xticks)
+        ax.set_yticklabels(xticklabels, rotation=45, ha="right")
+        fig.colorbar(mpl.cm.ScalarMappable(norm= norm, cmap=mpl.colormaps.get_cmap("seismic")),ax = ax)
+        ani = animation.ArtistAnimation(fig,ims,interval=2000,blit =True)
+        ani.save("Cluster covariance matrix animation.gif")
+         
     ###########################################################################
     ############################    MEASUREMENT    ############################
     ###########################################################################
@@ -412,6 +482,7 @@ class cluster_state():
             interaction_matrix = np.array([ [    0+1    ,   np.nan          ,        np.nan      ,              np.nan    ,         np.nan   ],
                                             [    np.nan   ,  0 + 2*1   ,   0 + 2*(1+n)    ,      0 + 2*(1+n+n*m)        ,     0 + 2*(1+n+n*m+n*m*k)   ]])
             if k == 1:
+                
                 if m == 1:
                     interaction_matrix = interaction_matrix[:,:-2]
                 else:
