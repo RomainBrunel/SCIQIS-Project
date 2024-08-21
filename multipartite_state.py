@@ -261,12 +261,35 @@ class cluster_state():
         Xip = np.pi/2 + np.arctan(2)
         Xim = np.pi/2 - np.arctan(2)
         thetas = np.array([Xip, Xim, Xip, Xim, Xip, Xim, Xip, Xim])
+        thetas= np.array([0,np.pi/2,0,np.pi/2,0,np.pi/2,0,np.pi/2])
         m, c, u = self.measurement_gaussian(modes, thetas)
 
         indices = self.macronode_output + macronode_number*ms
+        i_test = self.entangled_to_macronode + macronode_number*ms
+        slices_test = np.ix_(np.concatenate([i_test,i_test+N*ms*depth]),np.concatenate([i_test,i_test+N*ms*depth]))
         slices_C = np.ix_(np.concatenate([indices,indices+N*ms*depth]),np.concatenate([indices,indices+N*ms*depth]))
-        slices_A = np.ix_(np.concatenate([modes,modes+N*ms*depth]),np.concatenate([modes,indices+N*ms*depth]))
+        slices_A = np.ix_(np.concatenate([modes,modes+N*ms*depth]),np.concatenate([modes,modes+N*ms*depth]))
         A = cov[slices_A]    # cov matrix of the macronode measured
+        C = c[slices_C]
+
+        S1 = self.S(4,np.array([0,1,2,3]),0)
+
+        slices_input = np.ix_([0,2,4,6,8,10,12,14],[0,2,4,6,8,10,12,14])
+        slices_output = np.ix_([1,3,5,7,9,11,13,15],[1,3,5,7,9,11,13,15])
+
+        A_input = A[slices_input]
+        C_output = C[slices_output]
+        A_output = S1 @ A_input @ S1.conj().T # Try with apply squeezing as kronecker product of all the inputs
+        print(S1)
+        print(r"$S_{0\rightarrow1}$:"+f"{np.allclose(A_output,C_output)}")
+        print(np.abs(A_output - C_output))
+        print('Cout Aout')
+        print(C_output)
+        print(A_output)
+        print("Cin Ain")
+        print(cov[slices_test][slices_output])
+        print(A_input)
+        print(np.allclose(cov,cov.T))
 
         slices_0 = np.ix_([0,8],[0,8]) 
         slices_1 = np.ix_([1,9],[1,9]) 
@@ -282,7 +305,7 @@ class cluster_state():
         A4 = A[slices_4] # cov matrix of the measured modes 4 of the macronode
         A6 = A[slices_6] # cov matrix of the measured modes 6 of the macronode
 
-        S = self.S(1,np.array([0]),1)
+        S = self.S(1,np.array([0]),0)
         print(S)
 
         A0_out = S @ A0 @ S.conj().T # Expected cov matrix for the output state 
@@ -300,8 +323,6 @@ class cluster_state():
         print(r"$S_{2\rightarrow3}$:"+f"{np.allclose(A2_out,C3)}", np.abs(A2_out - C3)) 
         print(r"$S_{4\rightarrow5}$:"+f"{np.allclose(A4_out,C5)}", np.abs(A4_out - C5)) 
         print(r"$S_{6\rightarrow7}$:"+f"{np.allclose(A6_out,C7)}", np.abs(A6_out - C7)) 
-        print(A)
-        print(C)    
 
     def plot_wigner(self, mode:int, angle:np.ndarray):
         """Plot the wigner function of the desired mode after the measurement of all the other modes
@@ -333,6 +354,7 @@ class cluster_state():
             - theta: list of angles to wich the measurement will be apply
             """
         norm = mpl.colors.Normalize(vmin=-1, vmax=1)
+
         self.apply_rotation(modes,thetas)
         mu, cov, u = self.measurement_X(modes)
         if plot :
@@ -389,7 +411,7 @@ class cluster_state():
 
         PI = np.eye(2 * len(modes))
         PI[len(modes):, len(modes):] = 0
-        cov = A - C @ np.linalg.pinv(PI @ B @ PI) @ C.T
+        COV = A - C @ np.linalg.pinv(PI @ B @ PI) @ C.T
 
         a = mu[ar[mask]]
         b = mu[indices]
@@ -399,9 +421,9 @@ class cluster_state():
         distribution = np.vectorize(np.random.normal)
         u = distribution(mean,var)
 
-        mu = a - C @ np.linalg.pinv(PI @ B @ PI) @ (b - u)
+        MU = a - C @ np.linalg.pinv(PI @ B @ PI) @ (b - u)
 
-        return mu, cov, u
+        return MU, COV, u
         
     ###########################################################################
     #########################    STATE EVOLUTION    ###########################
@@ -418,13 +440,13 @@ class cluster_state():
             Update the covariance matrix and µ vector of the multipartite state """
         mu = self.state.mu
         cov = self.state.cov
+        c= cov.copy()
         n, m, k , N, ms, depth = self.n, self.m, self.k, self.N, self.macronode_size, self.spatial_depth
 
         mu[indices] = F @ mu[indices]
 
         ar = np.arange(2*N*ms*depth)
         mask = ~np.isin(ar, indices)
-
 
         slices_B = np.ix_(indices,indices)
         slices_Ct = np.ix_(indices,ar[mask])
@@ -464,7 +486,7 @@ class cluster_state():
                    modes = np.arange(len(modes)),
                    theta = thetas)
         
-        indice_XP = np.concatenate([modes+N*ms*depth,modes]) # I don"t understand why I have to invert the two indices of Xs an Ps to make the rotation in the good direction. Doing so same for squeezing makes everything collaps.
+        indice_XP = np.concatenate([modes,modes+N*ms*depth]) # I don"t understand why I have to invert the two indices of Xs an Ps to make the rotation in the good direction. Doing so same for squeezing makes everything collaps.
         self.apply_symplectic(P, indice_XP)
     
     def apply_rotation_halfstate(self, theta:float):
@@ -482,7 +504,7 @@ class cluster_state():
                    modes = indice_rot//2 - N*ms,
                    theta = theta)
         
-        indice_XP = np.concatenate([indice_rot+N*ms*depth,indice_rot]) # I don"t understand why I have to invert the two indices of Xs an Ps to make the rotation in the good direction. Doing so same for squeezing makes everything collaps.
+        indice_XP = np.concatenate([indice_rot,indice_rot+N*ms*depth]) # I don"t understand why I have to invert the two indices of Xs an Ps to make the rotation in the good direction. Doing so same for squeezing makes everything collaps.
         self.apply_symplectic(P, indice_XP)
 
     def apply_beamsplitter(self, col:int):
@@ -536,8 +558,8 @@ class cluster_state():
             - F: symplectic matrix 2N x 2N"""
         F = np.eye(2*N)
         F[modes,modes] = np.cos(theta)
-        F[modes,modes+N] = -np.sin(theta)
-        F[modes+N,modes] = np.sin(theta)
+        F[modes,modes+N] = np.sin(theta)
+        F[modes+N,modes] = -np.sin(theta)
         F[modes+N,modes+N] = np.cos(theta)
         return F
 
@@ -604,8 +626,8 @@ class cluster_state():
         n, m, k , N, ms, depth = self.n, self.m, self.k, self.N, self.macronode_size, self.spatial_depth
         if ms == 8:
             self.macronode = np.array([0 + 8*(n*m*k - n*m) , 0+1 + 8*n*m*k , 0+2 + 8*(n*m*k + 1) , 0+3 + 8*n*m*k , 0+4 , 0+5 + 8*n*m*k , 0+6 + 8*(n*m*k-n) , 0+7 + 8*n*m*k])
-            entangled_to_macronode = np.array([0 + 8*(n*m*k - n*m) + 7 , 0+1 + 8*n*m*k + 1, 0+2 + 8*(n*m*k + 1) -1, 0+3 + 8*n*m*k + 1, 0+4 - 1, 0+5 + 8*n*m*k + 1, 0+6 + 8*(n*m*k-n) - 1, 0+7 + 8*n*m*k - 7])
-            self.macronode_output = entangled_to_macronode - np.array([-2,-5,-3,-6,0,-7,2,-7])  # Indices of the output after tracing out measurement onto the macronode
+            self.entangled_to_macronode = self.macronode + np.array([7,1,-1,1,-1,1,-1,-7])
+            self.macronode_output = self.entangled_to_macronode - np.array([-2,-5,-3,-6,0,-7,2,-7])  # Indices of the output after tracing out measurement onto the macronode
 
     def generate_arrays_from_pairs(self,A, B, step, max_value):
         """ Myscalenious function used to convert a list of starting point into array until max_value with step step.
