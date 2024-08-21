@@ -205,6 +205,10 @@ class cluster_state():
             fig.colorbar(mpl.cm.ScalarMappable(norm= norm, cmap=mpl.colormaps.get_cmap("seismic")),ax = ax)
             ani = animation.ArtistAnimation(fig,ims,interval=2000,blit =True)
             ani.save("Cluster covariance matrix animation.gif")
+        
+    def reset_calculation(self):
+        """Function that reset the multipartite state to vaccum"""
+        self.state = multipartite_state(number_of_modes = self.spatial_depth*self.macronode_size*self.N)
          
     ###########################################################################
     ############################    MEASUREMENT    ############################
@@ -260,6 +264,28 @@ class cluster_state():
         print(r"$S_{6\rightarrow7}$:"+f"{np.allclose(A6_out,C7)}", np.abs(A6_out - C7)) 
         print(A)
         print(C)    
+
+    def plot_wigner(self, mode:int, angle:np.ndarray):
+        """Plot the wigner function of the desired mode after the measurement of all the other modes
+        
+        Args:
+            - mode: int desired mode to plot the wigner
+            - angle: list of the x angles for the x modes that will be repeated for all macronodes"""
+        if self.macronode_size == 8:
+            if len(angle) !=8:
+                print("angle must be of size 8")
+                return
+        else:
+            if len(angle)!= 2 :
+                print("angle must be of size 2")
+                return
+        indice = np.arange(self.N*self.macronode_size*self.spatial_depth)    
+        angle = np.tile(angle,self.N*self.spatial_depth)    
+        indice = np.delete(indice,mode)
+        angle = np.delete(angle,mode)
+
+        mu, cov, u =self.measurement_gaussian(indice,angle, plot=True)
+        return mu, cov, u
 
     def measurement_gaussian(self, modes:np.ndarray, thetas:np.ndarray, plot=False):
         """ Measure the X(theta) quadrature of the desired modes and plot the resulted wigner function

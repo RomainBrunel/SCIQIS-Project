@@ -48,7 +48,8 @@ MU, COV and M are respectively the updated mean vector, covariance matrix and ou
 ## Measurement based gate implementation
 Once the cluster is generated gates can be applied onto specific modes by measuring other specific modes. This can be simulated and compared with a simplectic implementation on th input mode.
 ```python
-cs.measurement_based_squeezing(N:int        # Macronode to measure
-                               )
+cs.plot_wigner(mode:int,                    # Mode to plot the wigner function
+               angle:np.ndarray             # Angles of the macronodes for the measurement (repeated identicaly for each macronodes)
+               )
 ```
 This function will compare the measurement based squeezing gate with a gate based squeezing gate and print the results. 
